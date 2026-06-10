@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from app.models.response import APIResponse
 from app.services.wechat_service import get_wechat, check_wechat_alive
 from app.services.init import WeChat
+from app.services.callback_service import callback_service
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -152,23 +153,54 @@ class ListenService:
         if not hasattr(self, '_initialized'):
             self._initialized = True
             self.wx_listeners: Dict[str, Any] = {}  # wx实例映射
+            self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def _get_event_loop(self) -> asyncio.AbstractEventLoop:
+        """获取 FastAPI 事件循环"""
+        if self._loop is not None and self._loop.is_running():
+            return self._loop
+        # 兜底：获取当前运行的事件循环
+        try:
+            return asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            return loop
 
     def _create_message_callback(self, who: str) -> Callable:
         """创建消息回调函数"""
 
         def on_message(msg, chat):
-            """处理接收到的消息"""
+            """处理接收到的消息
+
+            注意：此函数运行在 wxautox4 的监听线程中，不是 asyncio 事件循环线程。
+            使用 run_coroutine_threadsafe 将协程调度到事件循环上执行。
+            """
             try:
-                # 构造消息数据
+                raw_data = msg.raw
                 message_data = {
                     "type": "message",
-                    "data": msg.raw
+                    "data": raw_data
                 }
 
-                logger.info(f"收到来自 {who} 的消息: {message_data['data']['content']}")
+                logger.info(f"收到来自 {who} 的消息: {raw_data.get('content', '')}")
 
-                # 异步广播给所有监听该联系人的客户端
-                asyncio.create_task(manager.broadcast_to_listeners(who, message_data))
+                loop = self._get_event_loop()
+
+                # 异步广播给所有监听该联系人的 WebSocket 客户端
+                asyncio.run_coroutine_threadsafe(
+                    manager.broadcast_to_listeners(who, message_data), loop
+                )
+
+                # HTTP 回调异步推送到外部服务（不阻塞 wxautox4 线程）
+                if callback_service.enabled:
+                    try:
+                        body = callback_service.build_payload(raw_data, who)
+                        asyncio.run_coroutine_threadsafe(
+                            callback_service.send_callback(body), loop
+                        )
+                    except Exception as e:
+                        logger.error(f"调度回调推送失败: {e}")
 
             except Exception as e:
                 logger.error(f"处理消息回调时出错: {e}")
@@ -193,6 +225,13 @@ class ListenService:
         Returns:
             APIResponse
         """
+        # 缓存事件循环（start_listen 在 FastAPI 线程中调用，可以拿到 running loop）
+        if self._loop is None:
+            try:
+                self._loop = asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+
         try:
             # 安全检查
             if not self.is_safe_contact(who):

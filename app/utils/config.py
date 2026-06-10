@@ -94,6 +94,15 @@ class PerformanceConfig(BaseModel):
     retry_attempts: int = 3
     retry_delay: int = 1
 
+class CallbackConfig(BaseModel):
+    """回调配置模型"""
+    enabled: bool = False
+    url: str = ""
+    secret: str = ""
+    timeout: int = 10
+    retry_attempts: int = 3
+    retry_delay: int = 1
+
 class Settings(BaseModel):
     """总配置模型"""
     server: ServerConfig = Field(default_factory=ServerConfig)
@@ -105,6 +114,7 @@ class Settings(BaseModel):
     auth: AuthConfig = Field(default_factory=AuthConfig)
     api: APIConfig = Field(default_factory=APIConfig)
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
+    callback: CallbackConfig = Field(default_factory=CallbackConfig)
 
     @classmethod
     def load_config(cls, config_path: Optional[str] = None) -> "Settings":

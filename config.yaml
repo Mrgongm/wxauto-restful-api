@@ -70,9 +70,18 @@ api:
   redoc_url: "/redoc"                            # ReDoc路径
   openapi_url: "/openapi.json"                   # OpenAPI schema路径
 
+# 回调配置
+callback:
+  enabled: false                                        # 是否启用消息回调
+  url: ""                                               # 回调地址，如 http://localhost:8080/api/wxauto/callback
+  secret: ""                                            # 签名密钥 timestamp + "." + body
+  timeout: 10                                           # HTTP 请求超时时间(秒)
+  retry_attempts: 3                                     # 回调失败重试次数
+  retry_delay: 1                                        # 重试间隔(秒)
+
 # 性能配置
 performance:
   max_workers: 4                                 # 最大工作线程数
   timeout: 30                                    # 操作超时时间(秒)
   retry_attempts: 3                              # 重试次数
-  retry_delay: 1                                 # 重试延迟(秒) 
+  retry_delay: 1                                 # 重试延迟(秒)
