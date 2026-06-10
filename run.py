@@ -114,13 +114,23 @@ def main() -> None:
         threading.Thread(target=open_browser, args=(url,), daemon=True).start()
 
         # 启动uvicorn服务器
-        uvicorn.run(
-            "app.main:app",
-            host=host,
-            port=port,
-            reload=reload,
-            log_level=settings.logging.level.lower()
-        )
+        # PyInstaller 打包环境下直接传 app 对象，禁用热重载
+        if getattr(sys, 'frozen', False):
+            from app.main import app as fastapi_app
+            uvicorn.run(
+                fastapi_app,
+                host=host,
+                port=port,
+                log_level=settings.logging.level.lower()
+            )
+        else:
+            uvicorn.run(
+                "app.main:app",
+                host=host,
+                port=port,
+                reload=reload,
+                log_level=settings.logging.level.lower()
+            )
     except KeyboardInterrupt:
         logger.info("收到键盘中断，正在关闭服务...")
         service_manager.stop_service()

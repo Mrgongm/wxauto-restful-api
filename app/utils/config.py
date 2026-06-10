@@ -117,25 +117,51 @@ class Settings(BaseModel):
     callback: CallbackConfig = Field(default_factory=CallbackConfig)
 
     @classmethod
+    def _find_config(cls) -> Path:
+        """查找 config.yaml，优先 exe 同级目录，其次源码目录"""
+        import sys
+        # 1. exe 同级目录（打包后用户可编辑）
+        if getattr(sys, 'frozen', False):
+            exe_dir = Path(sys.executable).parent
+            candidate = exe_dir / "config.yaml"
+            if candidate.exists():
+                return candidate
+        # 2. 当前工作目录
+        candidate = Path("config.yaml")
+        if candidate.exists():
+            return candidate
+        # 3. PyInstaller 内部打包的资源
+        if getattr(sys, 'frozen', False):
+            candidate = Path(sys._MEIPASS) / "config.yaml"
+            if candidate.exists():
+                return candidate
+        # 4. 源码目录（app/main.py 的上级）
+        candidate = Path(__file__).resolve().parent.parent.parent / "config.yaml"
+        if candidate.exists():
+            return candidate
+        return Path("config.yaml")
+
+    @classmethod
     def load_config(cls, config_path: Optional[str] = None) -> "Settings":
         """加载配置文件
-        
+
         Args:
-            config_path: 配置文件路径，如果为None则使用默认路径
-            
+            config_path: 配置文件路径，如果为None则自动查找
+
         Returns:
             Settings: 配置对象
         """
         if config_path is None:
-            config_path = "config.yaml"
-            
-        config_path = Path(config_path)
+            config_path = cls._find_config()
+        else:
+            config_path = Path(config_path)
+
         if not config_path.exists():
             return cls()
-            
+
         with open(config_path, "r", encoding="utf-8") as f:
             config_data = yaml.safe_load(f)
-            
+
         return cls(**config_data)
 
 # 全局配置对象

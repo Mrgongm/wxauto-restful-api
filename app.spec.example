@@ -1,0 +1,189 @@
+# -*- mode: python ; coding: utf-8 -*-
+import os
+from pathlib import Path
+
+
+# ================================ 自行修改此处内容 ================================
+
+py = 'run.py'              # 程序入口文件
+app_name = 'wxauto-api'    # exe 程序名
+
+# ================================= 以下请勿修改 ===================================
+
+ROOT = os.path.abspath('.')
+
+
+def collect_wxautox4_files():
+    """完整收集 wxautox4 所有需要的文件（DLL、模型、配置等）"""
+    try:
+        import wxautox4
+        base_path = Path(wxautox4.__file__).parent
+    except ImportError:
+        print("未找到 wxautox4 库，请先 pip install wxautox4")
+        return []
+
+    files = []
+
+    patterns = {
+        'binaries': ['*.dll', '*.pyd', '*.exe'],
+        'datas': ['*.xnet', '*.nas', '*.txt', 'RecDict']
+    }
+
+    for file_type, exts in patterns.items():
+        for pattern in exts:
+            if pattern == 'RecDict':
+                recdict = base_path / 'ocr' / 'Model' / 'RecDict'
+                if recdict.exists():
+                    files.append((str(recdict), 'wxautox4/ocr/Model'))
+            else:
+                for file in base_path.rglob(pattern):
+                    if file.is_file():
+                        rel_path = file.relative_to(base_path).parent
+                        target_dir = str(Path('wxautox4') / rel_path)
+                        files.append((str(file), target_dir))
+
+    return files
+
+
+def collect_sounddevice_files():
+    """收集 sounddevice 的 PortAudio DLL"""
+    try:
+        import _sounddevice_data
+        base_path = Path(_sounddevice_data.__file__).parent / 'portaudio-binaries'
+    except ImportError:
+        return []
+
+    files = []
+    for dll in base_path.glob('*.dll'):
+        files.append((str(dll), '_sounddevice_data/portaudio-binaries'))
+    return files
+
+
+wxautox4_files = collect_wxautox4_files()
+sounddevice_files = collect_sounddevice_files()
+
+a = Analysis(
+    [py],
+    pathex=[ROOT],
+    binaries=wxautox4_files + sounddevice_files,
+    datas=[
+        (os.path.join(ROOT, 'config.yaml'), '.'),
+        (os.path.join(ROOT, 'static'), 'static'),
+        (os.path.join(ROOT, 'schemas.json'), '.'),
+    ],
+    hiddenimports=[
+        # wxautox4 核心
+        'wxautox4',
+        'wxautox4.ocr',
+        'wxautox4.ui',
+        'wxautox4.uia',
+        'wxautox4.msgs',
+        'wxautox4.utils',
+        'difflib',
+        # app 包 - 确保所有子模块被包含
+        'app',
+        'app.main',
+        'app.api',
+        'app.api.v1',
+        'app.api.v1.activation',
+        'app.api.v1.apps',
+        'app.api.v1.chat',
+        'app.api.v1.files',
+        'app.api.v1.info',
+        'app.api.v1.listen',
+        'app.api.v1.web',
+        'app.api.v1.wechat',
+        'app.database',
+        'app.database.factory',
+        'app.database.sqlite',
+        'app.middleware',
+        'app.middleware.concurrency',
+        'app.models',
+        'app.models.base',
+        'app.models.file',
+        'app.models.response',
+        'app.models.standard_data',
+        'app.models.request',
+        'app.models.request.activation',
+        'app.models.request.apps',
+        'app.models.request.chat',
+        'app.models.request.listen',
+        'app.models.request.wechat',
+        'app.monitoring',
+        'app.monitoring.health',
+        'app.monitoring.metrics',
+        'app.services',
+        'app.services.activation_service',
+        'app.services.app_service',
+        'app.services.applications',
+        'app.services.applications.acceptnewfriend',
+        'app.services.callback_service',
+        'app.services.chat_service',
+        'app.services.executor',
+        'app.services.file_service',
+        'app.services.init',
+        'app.services.listen_service',
+        'app.services.operation_queue',
+        'app.services.service_manager',
+        'app.services.wechat_service',
+        'app.utils',
+        'app.utils.auth',
+        'app.utils.config',
+        'app.utils.error_handler',
+        'app.utils.logger',
+        'app.utils.response_builder',
+        'app.utils.settings',
+        'app.utils.wx_package_manager',
+        # FastAPI / uvicorn
+        'uvicorn.logging',
+        'uvicorn.loops',
+        'uvicorn.loops.auto',
+        'uvicorn.protocols',
+        'uvicorn.protocols.http',
+        'uvicorn.protocols.http.auto',
+        'uvicorn.protocols.websockets',
+        'uvicorn.protocols.websockets.auto',
+        'uvicorn.lifespan',
+        'uvicorn.lifespan.on',
+        # tkinter（wxautox4 依赖）
+        'tkinter',
+        # sounddevice（wxautox4 依赖）
+        'sounddevice',
+        '_sounddevice',
+        # 其他依赖
+        'pydantic',
+        'pydantic.deprecated',
+        'pydantic.deprecated.decorator',
+        'sqlalchemy.dialects.sqlite',
+        'yaml',
+        'multipart',
+        'dotenv',
+    ],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=None,
+    noarchive=False,
+)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=None)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    [],
+    name=app_name,
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True,
+)

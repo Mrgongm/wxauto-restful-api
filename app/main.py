@@ -1,3 +1,6 @@
+import sys
+import os
+from pathlib import Path
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,6 +11,13 @@ from app.models.response import APIResponse
 from app.utils.config import settings
 from app.utils.wx_package_manager import get_supported_features
 from app.middleware.concurrency import ConcurrencyControlMiddleware
+
+# 获取资源根目录（兼容 PyInstaller 打包和源码运行）
+def get_base_path() -> Path:
+    if getattr(sys, 'frozen', False):
+        # PyInstaller 打包后，资源解压到临时目录 _MEIPASS
+        return Path(sys._MEIPASS)
+    return Path(__file__).resolve().parent.parent
 from typing import Any, Dict
 from fastapi.responses import HTMLResponse
 from pathlib import Path
@@ -47,12 +57,14 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 # 挂载静态文件
-app.mount("/static", StaticFiles(directory="static"), name="static")
+_static_dir = str(get_base_path() / "static")
+if os.path.isdir(_static_dir):
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
 
 # 挂载Web控制台（生产环境）
 try:
     from fastapi.staticfiles import StaticFiles
-    web_dist = Path("web/dist")
+    web_dist = get_base_path() / "web" / "dist"
     if web_dist.exists():
         app.mount("/", StaticFiles(directory="web/dist", html=True), name="web")
 except Exception:
