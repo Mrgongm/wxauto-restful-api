@@ -1,12 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_submodules
 
 
 # ================================ 自行修改此处内容 ================================
 
 py = 'run.py'              # 程序入口文件
-app_name = 'wxauto-api'    # exe 程序名
+app_name = 'jiawa-wx-api'    # exe 程序名
 
 # ================================= 以下请勿修改 ===================================
 
@@ -59,13 +60,53 @@ def collect_sounddevice_files():
     return files
 
 
+def collect_pywin32_files():
+    """收集 pywin32 的全部 DLL/PYD 文件（win32ui 等模块依赖）"""
+    files = []
+    try:
+        import win32api
+        site_pkg = Path(win32api.__file__).parent.parent
+
+        # 1. pywin32_system32 DLLs（pythoncom, pywintypes）→ 放到根目录
+        sys32 = site_pkg / 'pywin32_system32'
+        if sys32.exists():
+            for dll in sys32.glob('*.dll'):
+                files.append((str(dll), '.'))
+
+        # 2. win32/*.pyd 扩展模块 → 放到根目录
+        win32_dir = site_pkg / 'win32'
+        for pyd in win32_dir.glob('*.pyd'):
+            files.append((str(pyd), '.'))
+
+        # 3. pythonwin/win32ui.pyd 等 → 放到根目录
+        pythonwin_dir = site_pkg / 'pythonwin'
+        for pyd in pythonwin_dir.glob('*.pyd'):
+            files.append((str(pyd), '.'))
+        for dll in pythonwin_dir.glob('*.dll'):
+            files.append((str(dll), '.'))
+
+        # 4. MFC 运行时 DLL（win32ui.pyd 的关键依赖）
+        # 新电脑上没有 mfc140u.dll，必须打包进去
+        mfc_names = ['mfc140u.dll', 'mfc140.dll', 'mfcm140u.dll', 'mfcm140.dll']
+        system32 = Path(os.environ['SystemRoot']) / 'System32'
+        for name in mfc_names:
+            mfc_path = system32 / name
+            if mfc_path.exists():
+                files.append((str(mfc_path), '.'))
+
+    except ImportError:
+        print("未找到 pywin32，请先 pip install pywin32")
+    return files
+
+
 wxautox4_files = collect_wxautox4_files()
 sounddevice_files = collect_sounddevice_files()
+pywin32_files = collect_pywin32_files()
 
 a = Analysis(
     [py],
     pathex=[ROOT],
-    binaries=wxautox4_files + sounddevice_files,
+    binaries=wxautox4_files + sounddevice_files + pywin32_files,
     datas=[
         (os.path.join(ROOT, 'config.yaml'), '.'),
         (os.path.join(ROOT, 'static'), 'static'),
@@ -150,13 +191,30 @@ a = Analysis(
         # sounddevice（wxautox4 依赖）
         'sounddevice',
         '_sounddevice',
+        # pywin32（wxautox4 依赖）
+        'win32ui',
+        'win32uiole',
+        'win32api',
+        'win32con',
+        'win32gui',
+        'win32process',
+        'win32event',
+        'win32clipboard',
+        'pywintypes',
+        'pythoncom',
+        'pywin',
+        'pywin.mfc',
+        'pywin.framework',
+        'dde',
         # 其他依赖
         'pydantic',
         'pydantic.deprecated',
         'pydantic.deprecated.decorator',
         'sqlalchemy.dialects.sqlite',
         'yaml',
-        'multipart',
+        # python-multipart（FastAPI 表单解析依赖）
+        *collect_submodules('python_multipart'),
+        *collect_submodules('multipart'),
         'dotenv',
     ],
     hookspath=[],
