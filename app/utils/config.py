@@ -103,6 +103,11 @@ class CallbackConfig(BaseModel):
     retry_attempts: int = 3
     retry_delay: int = 1
 
+class ListenConfig(BaseModel):
+    """监听配置模型"""
+    safe_contacts: List[str] = Field(default_factory=lambda: ["文件传输助手"])
+    sandbox_mode: bool = True
+
 class Settings(BaseModel):
     """总配置模型"""
     server: ServerConfig = Field(default_factory=ServerConfig)
@@ -115,6 +120,7 @@ class Settings(BaseModel):
     api: APIConfig = Field(default_factory=APIConfig)
     performance: PerformanceConfig = Field(default_factory=PerformanceConfig)
     callback: CallbackConfig = Field(default_factory=CallbackConfig)
+    listen: ListenConfig = Field(default_factory=ListenConfig)
 
     @classmethod
     def _find_config(cls) -> Path:

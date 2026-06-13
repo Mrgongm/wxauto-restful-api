@@ -15,15 +15,14 @@ from app.models.response import APIResponse
 from app.services.wechat_service import get_wechat, check_wechat_alive
 from app.services.init import WeChat
 from app.services.callback_service import callback_service
+from app.utils.config import settings
 
 # 配置日志
 logger = logging.getLogger(__name__)
 
-# 安全白名单
-SAFE_CONTACTS: Set[str] = {"文件传输助手", "Kim", "Cluic"}
-
-# 沙箱模式（生产环境可设置为False）
-SANDBOX_MODE: bool = True
+# 从配置文件读取安全白名单和沙箱模式
+SAFE_CONTACTS: Set[str] = set(settings.listen.safe_contacts)
+SANDBOX_MODE: bool = settings.listen.sandbox_mode
 
 
 class ListenMessage(BaseModel):

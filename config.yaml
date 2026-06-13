@@ -70,6 +70,11 @@ api:
   redoc_url: "/redoc"                            # ReDoc路径
   openapi_url: "/openapi.json"                   # OpenAPI schema路径
 
+# 监听配置
+listen:
+  safe_contacts: ["文件传输助手", "技术"]  # 安全白名单，只有这些联系人可以被监听
+  sandbox_mode: true                      # 沙箱模式：true 时非白名单联系人将被拒绝监听
+
 # 回调配置
 callback:
   enabled: false                                        # 是否启用消息回调
