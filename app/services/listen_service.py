@@ -3,11 +3,13 @@
 基于wxautox4的AddListenChat和on_message回调机制
 """
 import asyncio
+import hashlib
 import json
 import logging
+import time
 from datetime import datetime
-from typing import Dict, List, Optional, Set, Any, Callable
-from collections import defaultdict
+from typing import Dict, List, Optional, Set, Any, Callable, Deque
+from collections import defaultdict, deque
 from fastapi import WebSocket
 from pydantic import BaseModel
 
@@ -23,6 +25,40 @@ logger = logging.getLogger(__name__)
 # 从配置文件读取安全白名单和沙箱模式
 SAFE_CONTACTS: Set[str] = set(settings.listen.safe_contacts)
 SANDBOX_MODE: bool = settings.listen.sandbox_mode
+
+# 消息去重缓存：存储最近处理过的消息哈希，防止 wxautox4 重复触发回调
+_DEDUP_TTL = 10  # 去重缓存保留时间（秒）
+_recent_msg_hashes: Deque[str] = deque(maxlen=200)  # 最多保留200条
+_recent_msg_times: Dict[str, float] = {}  # {msg_hash: timestamp}
+
+
+def _is_duplicate_message(raw_data: Dict[str, Any]) -> bool:
+    """检查是否为重复消息（基于消息内容哈希 + 时间窗口去重）
+
+    Args:
+        raw_data: wxautox4 原始消息数据
+
+    Returns:
+        True 表示是重复消息，应跳过
+    """
+    # 构建去重键：发送者 + 内容 + 类型 + 时间（如果有）
+    dedup_key = f"{raw_data.get('content', '')}|{raw_data.get('type', '')}|{raw_data.get('time', '')}"
+    msg_hash = hashlib.md5(dedup_key.encode('utf-8')).hexdigest()
+
+    now = time.time()
+
+    # 清理过期缓存
+    expired = [h for h, t in _recent_msg_times.items() if now - t > _DEDUP_TTL]
+    for h in expired:
+        _recent_msg_times.pop(h, None)
+
+    if msg_hash in _recent_msg_times:
+        logger.debug(f"检测到重复消息，已跳过: {msg_hash}")
+        return True
+
+    _recent_msg_hashes.append(msg_hash)
+    _recent_msg_times[msg_hash] = now
+    return False
 
 
 class ListenMessage(BaseModel):
@@ -116,19 +152,31 @@ class WebSocketConnectionManager:
             self.self_client_listeners[client_id].discard(who)
 
     def get_listeners(self, who: Optional[str] = None) -> Dict[str, Any]:
-        """获取监听状态"""
+        """获取监听状态
+
+        以 callbacks（wxautox4 实际监听状态）为准，
+        同时附加 WebSocket 客户端订阅数。
+        """
         if who:
+            is_listening = who in self.callbacks
             return {
                 "who": who,
-                "is_listening": who in self.listener_map and len(self.listener_map[who]) > 0,
-                "listener_count": len(self.listener_map.get(who, set()))
+                "is_listening": is_listening,
+                "ws_client_count": len(self.listener_map.get(who, set()))
             }
         else:
+            # 以 callbacks 为权威来源，合并 WebSocket 订阅信息
+            all_listening = set(self.callbacks.keys()) | set(self.listener_map.keys())
+            active_listeners = {}
+            for name in all_listening:
+                ws_clients = len(self.listener_map.get(name, set()))
+                active_listeners[name] = {
+                    "is_listening": name in self.callbacks,
+                    "ws_client_count": ws_clients
+                }
             return {
-                "active_listeners": {
-                    who: len(clients) for who, clients in self.listener_map.items() if clients
-                },
-                "total_listeners": sum(len(clients) for clients in self.listener_map.values()),
+                "active_listeners": active_listeners,
+                "total_listeners": len(self.callbacks),
                 "active_connections": len(self.active_connections)
             }
 
@@ -177,6 +225,15 @@ class ListenService:
             """
             try:
                 raw_data = msg.raw
+
+                # 去重检查：防止 wxautox4 对同一条消息重复触发回调
+                if _is_duplicate_message(raw_data):
+                    return
+
+                # 跳过自己发送的消息，不进行回调
+                if raw_data.get('src') == 'self':
+                    return
+
                 message_data = {
                     "type": "message",
                     "data": raw_data
