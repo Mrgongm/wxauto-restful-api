@@ -81,8 +81,9 @@ callback:
   url: ""                                               # 回调地址，如 http://localhost:8080/api/wxauto/callback
   secret: ""                                            # 签名密钥 timestamp + "." + body
   timeout: 10                                           # HTTP 请求超时时间(秒)
-  retry_attempts: 3                                     # 回调失败重试次数
+  retry_attempts: 1                                     # 回调失败重试次数
   retry_delay: 1                                        # 重试间隔(秒)
+  notify_contact: "文件传输助手"                          # 回调失败时发送通知的微信联系人，留空则不通知
 
 # 性能配置
 performance:

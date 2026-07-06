@@ -27,10 +27,14 @@ class CallbackService:
             cls._instance = super(CallbackService, cls).__new__(cls)
         return cls._instance
 
+    # 通知限流：1分钟内仅发送1条通知
+    _NOTIFY_COOLDOWN = 60
+
     def __init__(self):
         if not hasattr(self, '_initialized'):
             self._initialized = True
             self._config = settings.callback
+            self._last_notify_time: float = 0.0
 
     @property
     def enabled(self) -> bool:
@@ -73,6 +77,67 @@ class CallbackService:
             "timestamp": int(time.time())
         }
         return json.dumps(payload, ensure_ascii=False)
+
+    async def _notify_failure(self, body: str, last_error: Optional[Exception]) -> None:
+        """回调失败后发送通知（限流：1分钟内仅1条）
+
+        通知顺序：
+        1. 向监听该联系人的 WebSocket 客户端推送"订单服务器通信异常"
+        2. 向配置的微信联系人发送通知消息
+
+        Args:
+            body: 原始回调请求体
+            last_error: 最后一次错误信息
+        """
+        now = time.time()
+        if now - self._last_notify_time < self._NOTIFY_COOLDOWN:
+            logger.info("通知冷却中，跳过本次通知（距上次 %.0fs）", now - self._last_notify_time)
+            return
+
+        # 解析 who 信息
+        who = ""
+        try:
+            payload = json.loads(body)
+            who = payload.get("who", "")
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # 1. 在当前对话中推送通信异常消息
+        try:
+            from app.services.listen_service import manager
+            await manager.broadcast_to_listeners(who, {
+                "type": "callback_error",
+                "message": "【订单服务器通信异常】\n请稍后重试或联系管理员",
+                "who": who,
+            })
+            logger.info("已向 WebSocket 客户端推送通信异常通知: who=%s", who)
+        except Exception as e:
+            logger.error("推送 WebSocket 通信异常通知失败: %s", e)
+
+        # 2. 向特定微信联系人发送通知
+        notify_contact = self._config.notify_contact
+        if notify_contact:
+            try:
+                from app.services.wechat_service import get_wechat, safe_send_msg
+
+                error_detail = str(last_error) if last_error else "未知错误"
+                notify_msg = (
+                    f"【订单服务器通信异常】\n"
+                    f"监听对象: {who}\n"
+                    f"错误信息: {error_detail}"
+                )
+
+                await asyncio.to_thread(
+                    safe_send_msg,
+                    get_wechat(""),
+                    notify_contact,
+                    notify_msg,
+                )
+                logger.info("已发送回调失败通知给 %s", notify_contact)
+            except Exception as e:
+                logger.error("发送回调失败通知时出错: %s", e)
+
+        self._last_notify_time = now
 
     async def send_callback(self, body: str) -> bool:
         """异步发送回调请求，包含重试逻辑
@@ -130,6 +195,10 @@ class CallbackService:
             "回调最终失败: url=%s, attempts=%d, last_error=%s",
             self._config.url, self._config.retry_attempts, last_error,
         )
+
+        # 回调全部失败后，发送微信通知
+        await self._notify_failure(body, last_error)
+
         return False
 
 

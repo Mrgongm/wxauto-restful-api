@@ -102,6 +102,7 @@ class CallbackConfig(BaseModel):
     timeout: int = 10
     retry_attempts: int = 3
     retry_delay: int = 1
+    notify_contact: str = ""  # 回调失败时发送通知的微信联系人，留空则不通知
 
 class ListenConfig(BaseModel):
     """监听配置模型"""
