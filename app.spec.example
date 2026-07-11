@@ -216,6 +216,9 @@ a = Analysis(
         *collect_submodules('python_multipart'),
         *collect_submodules('multipart'),
         'dotenv',
+        # httpx（callback_service 回调请求依赖）
+        *collect_submodules('httpx'),
+        *collect_submodules('httpcore'),
     ],
     hookspath=[],
     hooksconfig={},
