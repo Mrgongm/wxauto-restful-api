@@ -103,6 +103,9 @@ class CallbackConfig(BaseModel):
     retry_attempts: int = 3
     retry_delay: int = 1
     notify_contact: str = ""  # 回调失败时发送通知的微信联系人，留空则不通知
+    only_at_me: bool = False  # False=推送所有消息(默认); True=仅推送@我的消息
+    at_all_pass: bool = True  # only_at_me=True 时, @所有人 是否也算"@我"通过过滤
+    always_callback_chats: List[str] = Field(default_factory=list)  # 白名单群聊名, 无论开关是否开启都推送
 
 class ListenConfig(BaseModel):
     """监听配置模型"""

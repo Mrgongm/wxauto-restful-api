@@ -61,6 +61,48 @@ def _is_duplicate_message(raw_data: Dict[str, Any]) -> bool:
     return False
 
 
+def _should_callback(
+    raw_data: Dict[str, Any],
+    who: str,
+    my_nicknames: Set[str],
+    cfg,
+) -> bool:
+    """决定本条消息是否需要触发 HTTP 回调.
+
+    规则(按优先级):
+      1. 白名单: who in cfg.always_callback_chats -> True
+      2. 非群聊(私聊): chat_type != 'group' -> True
+         (@在私聊无意义, 私聊消息默认全部推送)
+      3. only_at_me=False -> True (推送所有)
+      4. only_at_me=True:
+         a. 内容包含 "@所有人" 且 cfg.at_all_pass -> True
+         b. 内容包含任一 "@<我的昵称>" -> True
+         c. 否则 -> False
+    """
+    # 规则1: 白名单永远推送
+    if who in (cfg.always_callback_chats or []):
+        return True
+
+    chat_type = raw_data.get("chat_type", "")
+    content = raw_data.get("content", "") or ""
+
+    # 规则2: 私聊不应用@过滤
+    if chat_type != "group":
+        return True
+
+    # 规则3: 全量推送模式
+    if not cfg.only_at_me:
+        return True
+
+    # 规则4: 仅@我模式
+    if cfg.at_all_pass and "@所有人" in content:
+        return True
+    for nick in my_nicknames:
+        if nick and f"@{nick}" in content:
+            return True
+    return False
+
+
 class ListenMessage(BaseModel):
     """监听消息模型"""
     who: str  # 发送者
@@ -214,6 +256,28 @@ class ListenService:
             asyncio.set_event_loop(loop)
             return loop
 
+    def _get_my_nicknames(self) -> Set[str]:
+        """返回当前登录账号的昵称集合(用于@检测). 线程安全: 只读 dict 键.
+
+        优先从 WxClient 字典键获取(init.py 中以 nickname 为键),
+        兜底从活实例的 .nickname 属性获取.
+        """
+        try:
+            from app.services.init import WxClient
+            names = set(WxClient.keys())
+            if names:
+                return names
+        except Exception:
+            pass
+        # 兜底: 从任意活实例的 .nickname 属性获取
+        try:
+            wx = get_wechat("")
+            if wx and hasattr(wx, "nickname"):
+                return {wx.nickname}
+        except Exception as e:
+            logger.warning(f"获取当前账号昵称失败: {e}")
+        return set()
+
     def _create_message_callback(self, who: str) -> Callable:
         """创建消息回调函数"""
 
@@ -267,10 +331,16 @@ class ListenService:
                 # HTTP 回调异步推送到外部服务（不阻塞 wxautox4 线程）
                 if callback_service.enabled:
                     try:
-                        body = callback_service.build_payload(raw_data, who)
-                        asyncio.run_coroutine_threadsafe(
-                            callback_service.send_callback(body), loop
-                        )
+                        if _should_callback(
+                            raw_data,
+                            who,
+                            self._get_my_nicknames(),
+                            settings.callback,
+                        ):
+                            body = callback_service.build_payload(raw_data, who)
+                            asyncio.run_coroutine_threadsafe(
+                                callback_service.send_callback(body), loop
+                            )
                     except Exception as e:
                         logger.error(f"调度回调推送失败: {e}")
 

@@ -84,6 +84,10 @@ callback:
   retry_attempts: 1                                     # 回调失败重试次数
   retry_delay: 1                                        # 重试间隔(秒)
   notify_contact: "文件传输助手"                          # 回调失败时发送通知的微信联系人，留空则不通知
+  # 回调过滤
+  only_at_me: false                                     # true=仅推送@我的消息; false=推送所有监听消息(默认)
+  at_all_pass: true                                     # only_at_me=true 时, @所有人 消息是否也推送
+  always_callback_chats: ["加瓦充值审核群"]               # 永远推送的群聊名称白名单, 例如: ["jiawa-订单", "技术群"]
 
 # 性能配置
 performance:
