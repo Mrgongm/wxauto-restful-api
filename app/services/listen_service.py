@@ -234,6 +234,22 @@ class ListenService:
                 if raw_data.get('src') == 'self':
                     return
 
+                # 引用消息：补全被引用的原消息内容
+                # wxautox4 的 msg.raw 默认不包含被引用内容，
+                # QuoteMessage 通过 quote_content 属性 / info 属性暴露
+                if raw_data.get('type') == 'quote':
+                    quote_content = getattr(msg, 'quote_content', None)
+                    if quote_content is None:
+                        # 兜底：从重写后的 msg.info 中获取
+                        try:
+                            info_data = msg.info
+                            if isinstance(info_data, dict):
+                                quote_content = info_data.get('quote_content')
+                        except Exception:
+                            quote_content = None
+                    if quote_content is not None:
+                        raw_data['quote_content'] = quote_content
+
                 message_data = {
                     "type": "message",
                     "data": raw_data
