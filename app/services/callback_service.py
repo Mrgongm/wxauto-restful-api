@@ -73,6 +73,7 @@ class CallbackService:
         """
         payload = {
             "who": who,
+            "tag": self._config.tag,
             "message": msg_data,
             "timestamp": int(time.time())
         }

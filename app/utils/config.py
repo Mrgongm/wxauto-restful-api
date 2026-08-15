@@ -106,6 +106,7 @@ class CallbackConfig(BaseModel):
     only_at_me: bool = False  # False=推送所有消息(默认); True=仅推送@我的消息
     at_all_pass: bool = True  # only_at_me=True 时, @所有人 是否也算"@我"通过过滤
     always_callback_chats: List[str] = Field(default_factory=list)  # 白名单群聊名, 无论开关是否开启都推送
+    tag: str = ""  # 客户端附加标记, 每次回调请求体顶层固定携带, 用于区分不同客户端
 
 class ListenConfig(BaseModel):
     """监听配置模型"""
